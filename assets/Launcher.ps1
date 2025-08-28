@@ -1,5 +1,5 @@
-# AIO Script Launcher with Status on Main Menu
-# Shows download status immediately when launched
+# AIO Script Launcher with Download Timestamps
+# Shows last download date for each tool
 
 function Get-Config {
     $ConfigFile = Join-Path -Path $PSScriptRoot -ChildPath "scripts.txt"
@@ -35,6 +35,23 @@ Activated.win|https://get.activated.win|activated-win.ps1
     return $AvailableScripts
 }
 
+function Get-FileTimestamp {
+    param($Path)
+    if (Test-Path $Path) {
+        $lastWrite = (Get-Item $Path).LastWriteTime
+        return $lastWrite.ToString("yyyy-MM-dd HH:mm")
+    }
+    return $null
+}
+
+function Update-FileTimestamp {
+    param($Path)
+    if (Test-Path $Path) {
+        # Touch the file to update timestamp
+        (Get-Item $Path).LastWriteTime = Get-Date
+    }
+}
+
 function Get-DownloadStatus {
     $scripts = Get-Config
     $statusOutput = @()
@@ -42,11 +59,18 @@ function Get-DownloadStatus {
     
     foreach ($script in $scripts) {
         $isDownloaded = Test-Path $script.Path
+        $timestamp = if ($isDownloaded) { 
+            "( $(Get-FileTimestamp $script.Path) )" 
+        } else { 
+            "" 
+        }
+        
         if ($isDownloaded) { $downloadedCount++ }
         
         $statusOutput += [PSCustomObject]@{
             Name = $script.Name
             Status = if ($isDownloaded) { "DOWNLOADED" } else { "MISSING" }
+            Timestamp = $timestamp
             Color = if ($isDownloaded) { "Green" } else { "Red" }
         }
     }
@@ -71,7 +95,11 @@ function Show-MainMenu {
     Write-Host "-----------------------------------------" -ForegroundColor Cyan
     
     foreach ($item in $status.StatusOutput) {
-        Write-Host ("{0,-20} [{1}]" -f $item.Name, $item.Status) -ForegroundColor $item.Color
+        if ($item.Status -eq "DOWNLOADED") {
+            Write-Host ("{0,-20} [{1}] {2}" -f $item.Name, $item.Status, $item.Timestamp) -ForegroundColor $item.Color
+        } else {
+            Write-Host ("{0,-20} [{1}]" -f $item.Name, $item.Status) -ForegroundColor $item.Color
+        }
     }
     
     Write-Host "-----------------------------------------" -ForegroundColor Cyan
@@ -89,8 +117,8 @@ function Show-MainMenu {
 function Show-DetailedStatus {
     $scripts = Get-Config
     Write-Host "`nDetailed Download Status:`n" -ForegroundColor White
-    Write-Host ("{0,-25} {1,-15} {2,-10}" -f "Tool Name", "Local File", "Status") -ForegroundColor Cyan
-    Write-Host ("-" * 60) -ForegroundColor Cyan
+    Write-Host ("{0,-25} {1,-15} {2,-12} {3}" -f "Tool Name", "Local File", "Status", "Last Downloaded") -ForegroundColor Cyan
+    Write-Host ("-" * 70) -ForegroundColor Cyan
     
     foreach ($script in $scripts) {
         $status = if (Test-Path $script.Path) { 
@@ -98,8 +126,13 @@ function Show-DetailedStatus {
         } else { 
             "MISSING" 
         }
+        $timestamp = if ($status -eq "DOWNLOADED") { 
+            Get-FileTimestamp $script.Path 
+        } else { 
+            "N/A" 
+        }
         $color = if ($status -eq "DOWNLOADED") { "Green" } else { "Red" }
-        Write-Host ("{0,-25} {1,-15} {2,-10}" -f $script.Name, $script.File, $status) -ForegroundColor $color
+        Write-Host ("{0,-25} {1,-15} {2,-12} {3}" -f $script.Name, $script.File, $status, $timestamp) -ForegroundColor $color
     }
     
     $downloaded = ($scripts | Where-Object { Test-Path $_.Path }).Count
@@ -116,6 +149,8 @@ function Download-AllTools {
         Write-Host "Downloading $($script.Name)..." -ForegroundColor White -NoNewline
         try {
             Invoke-WebRequest -Uri $script.Url -UseBasicParsing -OutFile $script.Path -ErrorAction Stop
+            # Update timestamp to show fresh download
+            Update-FileTimestamp $script.Path
             Write-Host " [OK]" -ForegroundColor Green
             $successCount++
         }
@@ -162,8 +197,13 @@ function Run-ToolMenu {
 
     Write-Host "`nPlease select a tool to run:`n" -ForegroundColor White
     for ($i = 0; $i -lt $scripts.Count; $i++) {
+        $timestamp = if (Test-Path $scripts[$i].Path) { 
+            "( $(Get-FileTimestamp $scripts[$i].Path) )" 
+        } else { 
+            "" 
+        }
         $status = if (Test-Path $scripts[$i].Path) { "[LOCAL]" } else { "[ONLINE]" }
-        Write-Host "$($i+1). $($scripts[$i].Name) $status" -ForegroundColor Cyan
+        Write-Host "$($i+1). $($scripts[$i].Name) $status $timestamp" -ForegroundColor Cyan
     }
     Write-Host "`n0. Back to Main Menu" -ForegroundColor Gray
     Write-Host ""
@@ -184,6 +224,8 @@ function Run-ToolMenu {
         Write-Host "Downloading latest version..." -ForegroundColor Yellow
         try {
             Invoke-WebRequest -Uri $SelectedScript.Url -UseBasicParsing -OutFile $SelectedScript.Path -ErrorAction Stop
+            # Update timestamp for new download
+            Update-FileTimestamp $SelectedScript.Path
             Write-Host "Download successful!" -ForegroundColor Green
         }
         catch {
@@ -192,6 +234,9 @@ function Run-ToolMenu {
             pause
             return
         }
+    } else {
+        # Update timestamp even for existing files when run (shows last usage)
+        Update-FileTimestamp $SelectedScript.Path
     }
 
     # Run the script
