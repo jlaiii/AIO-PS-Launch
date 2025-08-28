@@ -1,7 +1,0 @@
-# AIO Tool Launcher Configuration
-# Add your scripts below in the format: Nickname|URL|LocalFileName
-# Use the '#' character for comments.
-
-Windows Toolbox|https://christitus.com/win|win-toolbox.ps1
-Activated.win|https://get.activated.win|activated-win.ps1
-# Another Tool|https://example.com/script.ps1|my-script.ps1
